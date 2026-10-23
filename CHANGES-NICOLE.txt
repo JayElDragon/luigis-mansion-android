@@ -1,0 +1,47 @@
+Luigi's Mansion Android - changes on top of the friend's project (Controllers / Layout / Performance Mode)
+
+Nothing was changed in how the existing menus look. Every existing row, tab and picture is the same.
+
+NEW IN OPTIONS > CONTROLS (same row style, added under the existing 4 rows)
+  Touch Haptics      Off / Light / Medium / Strong. Phone vibrates when a touch button is pressed.
+  Edit Layout        Move (drag) and resize (pinch, or the - / + buttons) every on-screen control.
+                     Save keeps it. Reset puts everything back (not saved until you press Save). Cancel throws it away.
+                     Works from the start menu and while playing (Options > Controls).
+  Reset Layout       Back to the layout that ships with the app (tap twice to confirm).
+  Controller Settings  Opens the game's own settings menu (the F1 menu) while playing. That menu has
+                     button remapping, dead zones, trigger points, rumble strength + test rumble,
+                     and which controller is Player 1. A CLOSE button replaces MENU while it is open.
+
+NEW IN OPTIONS > GRAPHICS (9th row, the list scrolls when a tab has more than 8 rows)
+  Performance Mode   Cooler phone: frame rate capped at 60, render resolution 1x, no anti-aliasing,
+                     reverb off, VSync on, 60 Hz display request and Android "sustained performance".
+                     If Android reports the phone as warm it lowers the frame rate to 60, and to 30 when hot,
+                     then restores it when it cools down. Your own settings are not overwritten.
+
+FILES CHANGED
+  TouchOverlay.java   layout store, editor, haptics, reloadPrefs
+  OptionsView.java    new rows, scrolling for tabs with more than 8 rows
+  MyGame.java         Performance Mode / thermal cool-down, layout edit + engine menu hooks
+  LauncherActivity.java  Edit Layout from the start menu
+  GameSettings.java   Performance Mode values written to settings.ini
+
+NOT INCLUDED ON PURPOSE: Girly Pop (later).
+
+--- Update 2: widescreen boot menu ---
+* MenuView.java + assets/menu_seams.bin: REAL widescreen start menu. On phones wider than 16:9 the painting is
+  widened by inserting extra pixel columns only in low-detail spots (sky, dark trees, house walls). The logo,
+  Boos, buttons, Luigi, torches and moon are never stretched; they just slide as whole pieces. The animations
+  (Boos, torch fire, flashlight, fireflies, lamp) and the touch buttons follow the moved art.
+  Screens even wider than ~19.6:9 get a small soft fill at the very edges for the leftover bit.
+* TorchFire.java: draw() now takes the sideways slide of each torch (0 on normal screens).
+* Everything else in the start menu (animations, TorchFire, assets) is byte-for-byte what the friend's APK has.
+* MenuView / OptionsView / FilesView: animation loops no longer wait for "window focus" before running; they
+  run whenever the screen is showing, and restart when the view is attached or becomes visible again.
+
+--- Update 3: HD texture packs (mod support, step 1) ---
+* Options > Graphics (scrolls) gets 4 rows: Custom Textures (on/off), Texture Pack (pick), Install Texture Pack
+  (choose a .zip, boot menu only), Remove Texture Pack (tap twice).
+* New: TexturePacks.java (unzip/list/remove), jniLibs/arm64-v8a/liblmmods.so (tiny ready-made helper that switches
+  on the engine's built-in texture replacement; its source is cpp/mods_bridge.c), MyGame/LauncherActivity hooks.
+* No NDK or CMake needed: build.gradle is unchanged, the helper ships as a ready-made file like the other libs.
+* See TEXTURE-PACKS.txt for the pack format.

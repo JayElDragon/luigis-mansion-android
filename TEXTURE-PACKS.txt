@@ -1,0 +1,27 @@
+HD TEXTURE PACKS (mod support, step 1)
+======================================
+
+For players
+-----------
+1. Main menu > Options > Graphics > "Install Texture Pack" and choose a .zip.
+2. It is unpacked into the app and selected automatically; "Custom Textures" turns on.
+3. Play. You can switch packs, turn Custom Textures on/off or remove a pack under the same Graphics tab
+   (changes made in-game apply when you close the options). Installing new zips is done from the main menu.
+Big packs use a lot of memory and can hurt speed on a phone. Performance Mode does not turn them off.
+
+For pack makers
+---------------
+The engine uses Dolphin-style names, one image per replaced texture:
+    tex1_<width>x<height>_<texture hash>_<format>.png            (or .dds)
+    tex1_<width>x<height>_<texture hash>_<palette hash>_<format>.png   (palette textures)
+Optional mip levels: add _mip1, _mip2 ... before the extension. Sub-folders inside the zip are fine.
+The hash is XXH64 (seed 0) of the original texture bytes, the same idea Dolphin uses, so Dolphin-made packs for
+Luigi's Mansion (GLME01) are the best starting point. The engine writes "texture_replacement: missing runtime key ..."
+lines to the log for names it was asked for but did not find (tag: LMRecomp).
+
+How it works (technical)
+------------------------
+libmain.so already contains Aurora's texture replacement (aurora::texture::load_replacement_directory), but nothing
+in the game turned it on. app/src/main/cpp/mods_bridge.c (shipped ready-made as jniLibs/arm64-v8a/liblmmods.so) calls it for the chosen folder
+(<app files>/texturepacks/<pack>/) on the game's own thread, and unregisters it when you switch or turn it off.
+If the engine build has no such function the app simply ignores packs.

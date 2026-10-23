@@ -1,0 +1,11 @@
+build/
+.gradle/
+.idea/
+local.properties
+*.iml
+*.apk
+*.iso
+*.rvz
+*.gcm
+*.zip
+app/src/main/jniLibs/arm64-v8a/libmain.so
