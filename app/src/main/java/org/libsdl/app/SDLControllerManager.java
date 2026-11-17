@@ -258,15 +258,15 @@ class SDLJoystickHandler {
                         }
                     }
 
-                    // Right stick: Z/RZ on most pads (Xbox, PlayStation, Switch Pro); RX/RY on some generic ones.
-                    boolean hasZ = false, hasRz = false, hasRx = false, hasRy = false;
-                    for (InputDevice.MotionRange r : joystick.axes) {
-                        int ax = r.getAxis();
-                        hasZ |= ax == MotionEvent.AXIS_Z; hasRz |= ax == MotionEvent.AXIS_RZ;
-                        hasRx |= ax == MotionEvent.AXIS_RX; hasRy |= ax == MotionEvent.AXIS_RY;
+                    // Right stick (C-stick): exactly the axes SDL itself maps as rightx / righty, i.e. the 3rd and
+                    // 4th axis of the sorted list above (SDL's Android default mapping is leftx a0, lefty a1,
+                    // rightx a2, righty a3). Picking them by name instead (Z/RZ first) chose RZ on pads that have
+                    // both RX/RY and Z/RZ, like the Odin's, while the game read the C-stick from RY: the vertical
+                    // flip and the stick curve then never reached the C-stick.
+                    if (joystick.axes.size() >= 4) {
+                        joystick.camX = joystick.axes.get(2).getAxis();
+                        joystick.camY = joystick.axes.get(3).getAxis();
                     }
-                    if (hasZ && hasRz) { joystick.camX = MotionEvent.AXIS_Z; joystick.camY = MotionEvent.AXIS_RZ; }
-                    else if (hasRx && hasRy) { joystick.camX = MotionEvent.AXIS_RX; joystick.camY = MotionEvent.AXIS_RY; }
 
                     boolean can_rumble = false;
                     boolean has_rgb_led = false;
