@@ -37,16 +37,18 @@ public class OptionsView extends View {
     static final int[] RES = {1, 2, 3, 4};
     static final String[] RES_NAME = {"1x - Fast", "2x - Balanced", "3x - Sharp", "4x - Ultra"};
     static final String[] PRESET_NAME = {"Low-end", "Balanced", "Smooth", "High quality", "Maximum"};
-    static final int[][] PRESET = {{30, 1, 1}, {60, 2, 1}, {120, 1, 1}, {60, 3, 4}, {60, 4, 4}};
+    static final int[][] PRESET = {{30, 1, 1}, {60, 2, 1}, {120, 1, 1}, {60, 3, 2}, {60, 4, 2}};
     static final float[] VOL = {0f, 0.25f, 0.5f, 0.75f, 1f};
 
     // picture geometry: the file is the 1672 x 941 picture; on wider screens a thin band of it is
     // stretched sideways so everything right of the band slides right (true widescreen).
     private static final float PIC_W = 1672f, PIC_H = 941f, BAND0 = 1134f, BAND1 = 1146f;
-    private static final float TAB_X0 = 148f, TAB_X1 = 432f, TAB_Y0 = 207f, TAB_PITCH = 102f, TAB_H = 92f;
+    private static final float TAB_X0 = 148f, TAB_X1 = 432f, TAB_Y0 = 207f;
+    // 6 tabs fit the same panel as the original 5 (102 / 92 picture units each) with a slightly tighter pitch.
+    private static final float TAB_PITCH = 85f, TAB_H = 76f;
     private static final float ROW_X0 = 482f, ROW_X1 = 1297f, ROW_C0 = 221f, ROW_PITCH = 82.5f, ROW_HALF = 37f;
-    private static final String[] TAB_NAME = {"Graphics", "Controls", "HUD", "Audio", "Cheats"};
-    private static final String[] TAB_ICON = {"gear", "pad", "hud", "audio", "spark"};
+    private static final String[] TAB_NAME = {"Graphics", "Controls", "HUD", "Audio", "Cheats", "Help"};
+    private static final String[] TAB_ICON = {"gear", "pad", "hud", "audio", "spark", "check"};
 
     private abstract class Row {
         final String icon, title, sub;
@@ -69,6 +71,22 @@ public class OptionsView extends View {
     private int scroll = 0, scrollStart = 0;
     private boolean dragScrolling = false;
     private long resetArmedAt = 0, removeArmedAt = 0;
+    private final Map<String, Long> armed = new HashMap<>();
+
+    /** Two taps within 3 s for anything that deletes or resets. */
+    private boolean confirm(String key) {
+        long now = android.os.SystemClock.uptimeMillis();
+        Long t = armed.get(key);
+        if (t != null && now - t < 3000) { armed.remove(key); return true; }
+        armed.put(key, now);
+        postInvalidateDelayed(3050);
+        return false;
+    }
+
+    private String armedLabel(String key, String normal) {
+        Long t = armed.get(key);
+        return t != null && android.os.SystemClock.uptimeMillis() - t < 3000 ? "Tap again" : normal;
+    }
     private int tab = 0, sbSel = 0, rowSel = 0;
     private boolean inList = false;
     private String lastSelection = "";
@@ -177,7 +195,12 @@ public class OptionsView extends View {
         List<Row> g = new ArrayList<>();
         g.add(new Row("wide", "Screen Format", "Original, widescreen or ultra-wide", false) {
             final String[] formats = {"4:3", "Auto", "16:9", "16:10", "21:9", "32:9"};
-            @Override String value() { return formats[Math.max(0, Math.min(5, geti("g_aspect", GameSettings.DEF_ASPECT)))]; }
+            @Override String value() {
+                int i = Math.max(0, Math.min(5, geti("g_aspect", GameSettings.DEF_ASPECT)));
+                if (i != 1) return formats[i];
+                android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+                return "Auto (" + Diagnostics.aspectName(dm.widthPixels, dm.heightPixels) + ")";
+            }
             @Override void change(int dir) { prefs.edit().putInt("g_aspect", (geti("g_aspect", GameSettings.DEF_ASPECT)+dir+6)%6).commit(); }
         });
         g.add(hudRow());
@@ -187,32 +210,54 @@ public class OptionsView extends View {
             @Override void change(int dir) {
                 int c = currentPreset(), n = PRESET.length;
                 int i = c < 0 ? (dir > 0 ? 0 : n - 1) : (c + dir + n) % n;
-                prefs.edit().putInt("g_fps", PRESET[i][0]).putInt("g_res", PRESET[i][1])
+                int pf = PRESET[i][0];  // a preset's 120 fps becomes the fastest rate this screen has
+                int[] ok = DisplayRates.fpsChoices(getContext());
+                int best = ok[0];
+                for (int v : ok) if (v <= pf) best = v;
+                prefs.edit().putInt("g_fps", best).putInt("g_res", PRESET[i][1])
                         .putInt("g_msaa", PRESET[i][2]).commit();
             }
         });
         g.add(new Row("run", "Frame Rate", "Target frame rate limit", false) {
             @Override String value() { return geti("g_fps", GameSettings.DEF_FPS) + " fps"; }
             @Override void change(int dir) {
-                int i = (idx(FPS, geti("g_fps", GameSettings.DEF_FPS)) + dir + FPS.length) % FPS.length;
-                prefs.edit().putInt("g_fps", FPS[i]).commit();
+                // Only rates this screen can show evenly (30, 60 and its own faster rates: 90, 120, 144...).
+                int[] fps = DisplayRates.fpsChoices(getContext());
+                int cur = geti("g_fps", GameSettings.DEF_FPS), i = -1;
+                for (int k = 0; k < fps.length; k++) if (fps[k] == cur) i = k;
+                if (i < 0) { i = 0; for (int k = 0; k < fps.length; k++) if (fps[k] <= cur) i = k; if (dir < 0) i++; }
+                i = (i + dir + fps.length) % fps.length;
+                prefs.edit().putInt("g_fps", fps[i]).commit();
             }
         });
         g.add(new Row("check", "Render Resolution", "Internal rendering resolution", false) {
-            @Override String value() { return RES_NAME[idx(RES, geti("g_res", GameSettings.DEF_RES))]; }
+            @Override String value() {
+                if (geti("g_fps", GameSettings.DEF_FPS) > 60) return "1x (at 120 fps)";  // 120 fps always renders at 1x
+                return RES_NAME[idx(RES, geti("g_res", GameSettings.DEF_RES))];
+            }
             @Override void change(int dir) {
                 int i = (idx(RES, geti("g_res", GameSettings.DEF_RES)) + dir + RES.length) % RES.length;
                 prefs.edit().putInt("g_res", RES[i]).commit();
             }
         });
         g.add(new Row("spark", "Anti-aliasing", "Smooth edges (MSAA)", false) {
-            @Override String value() { int m = geti("g_msaa", GameSettings.DEF_MSAA); return m > 1 ? m + "x" : "Off"; }
+            @Override String value() { int m = geti("g_msaa", GameSettings.DEF_MSAA); return m > 1 ? "2x" : "Off"; }
             @Override void change(int dir) {
-                prefs.edit().putInt("g_msaa", geti("g_msaa", GameSettings.DEF_MSAA) > 1 ? 1 : 4).commit();
+                prefs.edit().putInt("g_msaa", geti("g_msaa", GameSettings.DEF_MSAA) > 1 ? 1 : 2).commit();  // Off or 2x (4x only added heat)
             }
         });
-        g.add(boolRow("sync", "VSync", "Synchronize with display refresh rate", "g_vsync", true));
+        g.add(boolRow("sync", "VSync", "Even, smooth frames (keep on) · next launch", "g_vsync", true));
+        g.add(boolRow("check", "Sharp Picture", "No console TV blur filter (sharper at 2x and up)", "g_sharp", true));
         g.add(boolRow("run", "Performance Mode", "Cooler phone: 60 fps, 1x, no AA, no reverb", "g_perf", false));
+        if (DeviceTier.isHighEnd(getContext()))
+            g.add(boolRow("spark", "Boost CPU", "Experimental: game on the fastest cores (warmer phone)", "boost_cpu", false));
+        else
+            g.add(new Row("spark", "Boost CPU", "Experimental: game on the fastest cores", false) {
+                @Override String value() { return "Not accessible on this device"; }
+                @Override void change(int dir) {
+                    Lang.toast(getContext(), "Boost CPU is only for high-end phones", Toast.LENGTH_SHORT).show();
+                }
+            });
         g.add(boolRow("layers", "Custom Textures", "Load HD texture packs (PNG / DDS)", "tp_on", false));
         g.add(new Row("spark", "Texture Pack", "Which installed pack to use", false) {
             @Override String value() {
@@ -236,7 +281,7 @@ public class OptionsView extends View {
             @Override String value() { return "Choose…"; }
             @Override void change(int dir) {
                 if (getContext() instanceof LauncherActivity) ((LauncherActivity) getContext()).installTexturePack();
-                else Toast.makeText(getContext(), "Install packs from the main menu, then pick them here", Toast.LENGTH_LONG).show();
+                else Lang.toast(getContext(), "Install packs from the main menu, then pick them here", Toast.LENGTH_LONG).show();
             }
         });
         g.add(new Row("cross", "Remove Texture Pack", "Delete the selected pack from this app", false) {
@@ -246,7 +291,7 @@ public class OptionsView extends View {
             @Override void change(int dir) {
                 String a = prefs.getString("tp_pack", "");
                 if (a == null || a.isEmpty() || !TexturePacks.list(getContext()).contains(a)) {
-                    Toast.makeText(getContext(), "No texture pack selected", Toast.LENGTH_SHORT).show();
+                    Lang.toast(getContext(), "No texture pack selected", Toast.LENGTH_SHORT).show();
                     return;
                 }
                 long now = android.os.SystemClock.uptimeMillis();
@@ -254,7 +299,7 @@ public class OptionsView extends View {
                     removeArmedAt = 0;
                     TexturePacks.remove(getContext(), a);
                     prefs.edit().putString("tp_pack", "").commit();
-                    Toast.makeText(getContext(), "Texture pack removed", Toast.LENGTH_SHORT).show();
+                    Lang.toast(getContext(), "Texture pack removed", Toast.LENGTH_SHORT).show();
                 } else {
                     removeArmedAt = now;
                     postInvalidateDelayed(3050);
@@ -270,7 +315,7 @@ public class OptionsView extends View {
             @Override String value() { return "Open"; }
             @Override void change(int dir) {
                 if(getContext() instanceof LauncherActivity) ((LauncherActivity)getContext()).previewControls();
-                else Toast.makeText(getContext(),"Close options to use the touch controls",Toast.LENGTH_SHORT).show();
+                else Lang.toast(getContext(),"Close options to use the touch controls",Toast.LENGTH_SHORT).show();
             }
         });
         c.add(new Row("layers", "Control Opacity", "How see-through the buttons are", false) {
@@ -317,11 +362,28 @@ public class OptionsView extends View {
                 if (now - resetArmedAt < 3000) {
                     resetArmedAt = 0;
                     TouchOverlay.resetSavedLayout(prefs);
-                    Toast.makeText(getContext(), "Layout reset to default", Toast.LENGTH_SHORT).show();
+                    Lang.toast(getContext(), "Layout reset to default", Toast.LENGTH_SHORT).show();
                 } else {
                     resetArmedAt = now;
                     postInvalidateDelayed(3050);
                 }
+            }
+        });
+        c.add(new Row("pad", "Camera Stick Feel", "Right stick on controllers: Smooth is gentler for small moves", false) {
+            @Override String value() { return StickCurve.NAMES[Math.max(0, Math.min(2, geti("cam_curve", 0)))]; }
+            @Override void change(int dir) {
+                prefs.edit().putInt("cam_curve", (geti("cam_curve", 0) + dir + 3) % 3).commit();
+                StickCurve.load(prefs);
+            }
+        });
+        c.add(new Row("pad", "Camera Stick Speed", "How fast the camera turns at full tilt", false) {
+            @Override String value() { return Math.round(prefs.getFloat("cam_speed", 1f) * 100) + "%"; }
+            @Override void change(int dir) {
+                int v = Math.round(prefs.getFloat("cam_speed", 1f) * 10) + dir;
+                if (v > 10) v = 5;
+                if (v < 5) v = 10;
+                prefs.edit().putFloat("cam_speed", v / 10f).commit();
+                StickCurve.load(prefs);
             }
         });
         c.add(new Row("pad", "Controller Settings", "Remap buttons, rumble, dead zones, Xbox / PlayStation pads", false) {
@@ -330,7 +392,7 @@ public class OptionsView extends View {
                 if (getContext() instanceof MyGame) {
                     if (listener != null) listener.onClose();
                     ((MyGame) getContext()).toggleEngineMenu();
-                } else Toast.makeText(getContext(), "Start the game, then open Options with the MENU button", Toast.LENGTH_LONG).show();
+                } else Lang.toast(getContext(), "Start the game, then open Options with the MENU button", Toast.LENGTH_LONG).show();
             }
         });
         tabs.add(c);
@@ -356,6 +418,96 @@ public class OptionsView extends View {
         cheats.add(boolRow("wide", "Mirror Mansion", "Mirror the world and its controls", "cheat_mirror", false));
         cheats.add(boolRow("run", "Skip Cutscenes", "Press START during a cutscene to skip", "cheat_skip", false));
         tabs.add(cheats);
+
+        List<Row> help = new ArrayList<>();
+        help.add(new Row("check", "Language", "Menus and messages of the app", false) {
+            @Override String value() { return Lang.NAMES[Lang.index()]; }
+            @Override void change(int dir) {
+                Lang.set(getContext(), Lang.es ? 0 : 1);
+                invalidate();
+            }
+        });
+        help.add(new Row("sync", "Save Log", "Saves a report to Downloads · says what went wrong", false) {
+            @Override String value() { return "Save…"; }
+            @Override void change(int dir) {
+                if (getContext() instanceof android.app.Activity) Diagnostics.share((android.app.Activity) getContext(), prefs);
+            }
+        });
+        help.add(new Row("check", "Version", "Luigi's Mansion Android", false) {
+            @Override String value() { return Diagnostics.appVersion(getContext()); }
+            @Override void change(int dir) { }
+        });
+        help.add(new Row("hud", "Device", "Phone, Android and graphics chip", false) {
+            @Override String value() { return "View"; }
+            @Override void change(int dir) {
+                Lang.dialog(getContext(), android.app.AlertDialog.THEME_DEVICE_DEFAULT_DARK)
+                        .setTitle("This device")
+                        .setMessage(Diagnostics.deviceSummary(getContext()) + "\nBoost CPU: "
+                                + (DeviceTier.isHighEnd(getContext()) ? Boost.status() : "not accessible on this device")
+                                + "\n\nBusiest game threads:\n" + Diagnostics.threadSummary())
+                        .setPositiveButton("OK", null).show();
+            }
+        });
+        help.add(new Row("restore", "Safe Mode", "Lightest settings after a crash", true) {
+            @Override boolean on() { return getb("safe_mode", false); }
+            @Override void change(int dir) {
+                if (on()) {
+                    GameSettings.leaveSafeMode(getContext(), prefs);
+                    Lang.toast(getContext(), "Safe Mode off: your settings are back", Toast.LENGTH_SHORT).show();
+                } else {
+                    GameSettings.enterSafeMode(getContext(), prefs);
+                    Lang.toast(getContext(), "Safe Mode on", Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
+        help.add(new Row("sync", "Back Up Saves Now", "Copy to Download/Luigi's Mansion Android (also automatic)", false) {
+            @Override String value() { return "Back up"; }
+            @Override void change(int dir) {
+                final Context ctx = getContext();
+                new Thread(() -> {
+                    prefs.edit().remove("save_backup_time").commit();  // force a fresh copy
+                    boolean ok = SaveBackup.backupIfChanged(ctx, prefs);
+                    post(() -> Lang.toast(ctx, ok ? "Saves backed up to Download/Luigi's Mansion Android"
+                            : SaveBackup.hasSaves(ctx) ? "Backup failed" : "No save yet: play first", Toast.LENGTH_LONG).show());
+                }).start();
+            }
+        });
+        help.add(new Row("restore", "Restore Saves", "Pick an LM-saves.zip backup", false) {
+            @Override String value() { return "Choose…"; }
+            @Override void change(int dir) {
+                if (getContext() instanceof LauncherActivity) ((LauncherActivity) getContext()).pickSaveBackup();
+                else Lang.toast(getContext(), "Close the game first, then restore from the start menu", Toast.LENGTH_LONG).show();
+            }
+        });
+        help.add(new Row("layers", "Clear Shader Cache", "Fixes some black screens; first load is slower", false) {
+            @Override String value() { return armedLabel("cache", "Clear"); }
+            @Override void change(int dir) {
+                if (getContext() instanceof MyGame) {
+                    Lang.toast(getContext(), "Close the game first, then clear it from the start menu", Toast.LENGTH_LONG).show();
+                    return;
+                }
+                if (!confirm("cache")) return;
+                GameSettings.clearShaderCache(getContext());
+                Lang.toast(getContext(), "Shader cache cleared", Toast.LENGTH_SHORT).show();
+            }
+        });
+        help.add(new Row("restore", "Reset Settings", "Graphics, audio and controls back to default", false) {
+            @Override String value() { return armedLabel("reset", "Reset"); }
+            @Override void change(int dir) {
+                if (!confirm("reset")) return;
+                GameSettings.resetAll(getContext(), prefs);
+                Lang.toast(getContext(), "Settings reset for this phone", Toast.LENGTH_SHORT).show();
+            }
+        });
+        help.add(new Row("cross", "Clear Log", "Delete saved reports and logs", false) {
+            @Override String value() { return armedLabel("log", "Clear"); }
+            @Override void change(int dir) {
+                if (!confirm("log")) return;
+                Diagnostics.clearLogs(getContext());
+                Lang.toast(getContext(), "Logs cleared", Toast.LENGTH_SHORT).show();
+            }
+        });
+        tabs.add(help);
     }
 
     private List<Row> rows() { return tabs.get(tab); }
@@ -368,12 +520,12 @@ public class OptionsView extends View {
     private void restoreDefaults() {
         SharedPreferences.Editor e = prefs.edit();
         for (String k : new String[] {"g_fps", "g_res", "g_msaa", "g_vsync", "g_aspect", "g_hud43", "g_showfps",
-                "a_master", "a_music", "a_sfx", "a_reverb", "menu_music", "touch_enabled", "touch_alpha", "touch_hide_with_controller", "g_perf", "touch_haptic"})
+                "a_master", "a_music", "a_sfx", "a_reverb", "menu_music", "touch_enabled", "touch_alpha", "touch_hide_with_controller", "g_perf", "touch_haptic", "g_sharp", "g_cool"})
             e.remove(k);
         e.commit();
         save();
         sbSel = tab;  // keep the highlight on the real tab, not on the button just pressed
-        Toast.makeText(getContext(), "Defaults restored", Toast.LENGTH_SHORT).show();
+        Lang.toast(getContext(), "Defaults restored", Toast.LENGTH_SHORT).show();
         invalidate();
     }
 
@@ -419,6 +571,11 @@ public class OptionsView extends View {
         cv.save();
         cv.translate(ox, oy);
         cv.scale(scale, scale);
+        if (Lang.es) {  // Spanish title and button hints painted in the frame's own style
+            android.graphics.Bitmap t = Lang.art(getContext(), "es_opt_title.png"), h = Lang.art(getContext(), "es_opt_hints.png");
+            if (t != null) { rf.set(620f, 48f, 620f + t.getWidth(), 48f + t.getHeight()); cv.drawBitmap(t, null, rf, ip); }
+            if (h != null) { rf.set(1432f + extra, 874f, 1432f + extra + h.getWidth(), 874f + h.getHeight()); cv.drawBitmap(h, null, rf, ip); }
+        }
         for (int i = 0; i < TAB_NAME.length; i++) drawTab(cv, i);
         List<Row> rs = rows();
         for (int i = scroll; i < Math.min(rs.size(), scroll + VIS); i++) drawRow(cv, rs.get(i), i);
@@ -446,6 +603,15 @@ public class OptionsView extends View {
         scroll = Math.max(0, Math.min(Math.max(0, n - VIS), scroll));
     }
 
+    /** Largest text size from max down to min that fits maxW. */
+    private float fit(String s, float max, float min, Typeface tf, float maxW) {
+        tp.setTypeface(tf);
+        float size = max;
+        tp.setTextSize(size);
+        while (size > min && tp.measureText(s) > maxW) { size -= 1f; tp.setTextSize(size); }
+        return size;
+    }
+
     private void tint(Canvas cv, String name, float cx, float cy, float size, int color) {
         Bitmap b = icons.get(name);
         if (b == null) return;
@@ -456,6 +622,7 @@ public class OptionsView extends View {
     }
 
     private void text(Canvas cv, String s, float x, float y, float size, Typeface tf, Paint.Align al, int color) {
+        s = Lang.t(s);
         tp.setTypeface(tf);
         tp.setTextAlign(al);
         tp.setTextSize(size);
@@ -498,8 +665,9 @@ public class OptionsView extends View {
         float[] rx = {TAB_X0 + 13, TAB_X1 - 13}, ry = {t + 13, b - 13};
         for (float x : rx) for (float y : ry) cv.drawCircle(x, y, 3.2f, p);
         float cy = (t + b) / 2;
-        tint(cv, TAB_ICON[i], 197f, cy, 58f, selected ? 0xFF8CF078 : 0xFFB4BACB);
-        text(cv, TAB_NAME[i], 256f, cy + 11f, 31f, Typeface.DEFAULT_BOLD, Paint.Align.LEFT,
+        tint(cv, TAB_ICON[i], 197f, cy, 50f, selected ? 0xFF8CF078 : 0xFFB4BACB);
+        String tn = Lang.t(TAB_NAME[i]);
+        text(cv, tn, 252f, cy + 10f, fit(tn, 29f, 20f, Typeface.DEFAULT_BOLD, TAB_X1 - 16f - 252f), Typeface.DEFAULT_BOLD, Paint.Align.LEFT,
                 selected ? 0xFFFFFFFF : 0xFFE6E8F6);
         if (selected) {  // pointer towards the list
             path.reset();
@@ -533,8 +701,11 @@ public class OptionsView extends View {
         cv.drawRoundRect(rf, rad, rad, p);
         p.setStyle(Paint.Style.FILL);
         tint(cv, r.icon, 537f, cy, 58f, 0xFFC9CFD6);
-        text(cv, r.title, 602f, cy - 5f, 29f, Typeface.DEFAULT_BOLD, Paint.Align.LEFT, 0xFFFBEEDC);
-        text(cv, r.sub, 602f, cy + 23f, 21f, Typeface.DEFAULT, Paint.Align.LEFT, 0xFF8AA2BC);
+        // titles/subtitles shrink a little if they would run into the control (longer Spanish texts)
+        float maxW = (r.toggle ? 1120f : 965f) + extra - 602f;
+        String ti = Lang.t(r.title), su = Lang.t(r.sub);
+        text(cv, ti, 602f, cy - 5f, fit(ti, 29f, 22f, Typeface.DEFAULT_BOLD, maxW), Typeface.DEFAULT_BOLD, Paint.Align.LEFT, 0xFFFBEEDC);
+        text(cv, su, 602f, cy + 23f, fit(su, 21f, 15f, Typeface.DEFAULT, maxW), Typeface.DEFAULT, Paint.Align.LEFT, 0xFF8AA2BC);
         cv.save();
         cv.translate(extra, 0f);
         if (r.toggle) drawToggle(cv, cy, r.on());
@@ -572,6 +743,7 @@ public class OptionsView extends View {
     }
 
     private void drawCycle(Canvas cv, float cy, String val) {
+        val = Lang.t(val);
         float x0 = 977f, x1 = 1273f, h = 62f, a0 = 1027f, a1 = 1223f;
         rf.set(x0, cy - h / 2, x1, cy + h / 2);
         p.setColor(0xFF152B33);
@@ -668,7 +840,7 @@ public class OptionsView extends View {
             case MotionEvent.ACTION_UP: {
                 int hit = hitAt(e.getX(), e.getY());
                 if (!moved && hit == downHit && hit != -99) {
-                    if (hit < 5) activateTab(hit);
+                    if (hit >= 0 && hit < TAB_NAME.length) activateTab(hit);
                     else if (hit >= 100 && hit < 200) tapRow(hit - 100, e.getX());
                     else if (hit == 200) {
                         if (listener != null) listener.onClose();
@@ -688,7 +860,7 @@ public class OptionsView extends View {
             rowSel = (rowSel + dir + n) % n;
             ensureVisible();
         } else {
-            sbSel = (sbSel + dir + 5) % 5;
+            sbSel = (sbSel + dir + TAB_NAME.length) % TAB_NAME.length;
             if (sbSel < tabs.size()) { tab = sbSel; rowSel = 0; scroll = 0; }
         }
         invalidate();

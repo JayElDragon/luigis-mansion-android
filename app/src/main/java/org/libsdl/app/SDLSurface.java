@@ -115,6 +115,23 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         SDLActivity.onNativeSurfaceDestroyed();
     }
 
+    /** The screen changed refresh rate (same size): tell SDL, so the game's frame pacing follows. */
+    public boolean sendRefreshRate(float hz) {
+        if (!mIsSurfaceReady || mWidth <= 1 || mHeight <= 1) return false;
+        int dw = (int) mWidth, dh = (int) mHeight;
+        float density = 1.0f;
+        try {
+            DisplayMetrics realMetrics = new DisplayMetrics();
+            mDisplay.getRealMetrics(realMetrics);
+            dw = realMetrics.widthPixels;
+            dh = realMetrics.heightPixels;
+            density = (float) realMetrics.densityDpi / 160.0f;
+        } catch (Exception ignored) { }
+        SDLActivity.nativeSetScreenResolution((int) mWidth, (int) mHeight, dw, dh, density, hz);
+        SDLActivity.onNativeResize();
+        return true;
+    }
+
     // Called when the surface is resized
     @Override
     public void surfaceChanged(SurfaceHolder holder,

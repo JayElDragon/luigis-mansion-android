@@ -141,4 +141,119 @@ final class TexturePacks {
         //noinspection ResultOfMethodCallIgnored
         f.delete();
     }
+
+    // ---- Cooler packs: smaller textures + mipmaps (NOT USED: turned off in v17b; packs stay exactly as made) ----
+    // The engine only uses mipmaps (small copies for far-away surfaces) when the pack ships them as
+    // tex1_..._mip1.png, _mip2.png ... and most HD packs don't: then every far-away wall is read from
+    // the full HD picture, which keeps the GPU busy (heat, shimmer). optimize() writes those mip
+    // files, and first shrinks pictures bigger than the chosen size (Options > Texture Pack Size).
+
+    static final int[] SIZES = {1024, 512, 2048, 0};          // 0 = full size (still gets mipmaps)
+    static final String[] SIZE_NAMES = {"1024 (balanced)", "512 (coolest)", "2048 (sharp)", "Full (hottest)"};
+
+    static int maxSize(Context c, SharedPreferences p) {
+        int def = DeviceTier.tier(c) == DeviceTier.HIGH ? 1024 : 512;
+        return p.getInt("tp_max", def);
+    }
+
+    private static File marker(File dir) { return new File(dir, ".lm_optimized"); }
+
+    /** Size the pack was optimized for: -1 = not yet, 0 = full size. */
+    static int optimizedSize(File dir) {
+        try {
+            String s = Diagnostics.readText(marker(dir), 32);
+            return s == null ? -1 : Integer.parseInt(s.trim());
+        } catch (Throwable t) { return -1; }
+    }
+
+    /** True when the active pack still needs the one-time optimize for the chosen size. */
+    static boolean needsOptimize(Context c, SharedPreferences p) {
+        File d = activeDir(c, p);
+        if (d == null) return false;
+        int done = optimizedSize(d), want = maxSize(c, p);
+        if (done < 0) return true;
+        if (want == 0) return false;                  // full size wanted: can't grow back, keep what we have
+        return done == 0 || want < done;              // a smaller size than before
+    }
+
+    private static boolean isMip(String lowerLeaf) { return lowerLeaf.matches(".*_mip\\d+\\.png$"); }
+
+    private static void collect(File d, List<File> out) {
+        File[] fs = d.listFiles();
+        if (fs == null) return;
+        for (File f : fs) {
+            if (f.isDirectory()) collect(f, out);
+            else {
+                String l = f.getName().toLowerCase(Locale.ROOT);
+                if (l.startsWith("tex1_") && l.endsWith(".png") && !isMip(l)) out.add(f);
+            }
+        }
+    }
+
+    /** Shrinks pictures above maxSize (0 = keep) and writes mip files for every PNG texture. Returns textures done. */
+    static int optimize(File dir, int maxSize, Progress progress) {
+        List<File> files = new ArrayList<>();
+        collect(dir, files);
+        int done = 0;
+        for (File f : files) {
+            try { optimizeOne(f, maxSize); } catch (Throwable ignored) { }  // a bad file keeps its original
+            done++;
+            if (progress != null && (done & 7) == 0) progress.update(done);
+        }
+        Diagnostics.writeText(marker(dir), String.valueOf(maxSize));
+        if (progress != null) progress.update(done);
+        return done;
+    }
+
+    private static void optimizeOne(File f, int maxSize) throws IOException {
+        android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
+        o.inJustDecodeBounds = true;
+        android.graphics.BitmapFactory.decodeFile(f.getPath(), o);
+        int w = o.outWidth, h = o.outHeight;
+        if (w <= 0 || h <= 0) return;
+        int sample = 1;
+        if (maxSize > 0) while (Math.max(w / sample, h / sample) > maxSize && (w / sample) % 2 == 0 && (h / sample) % 2 == 0) sample *= 2;
+        String stem = f.getName().substring(0, f.getName().length() - 4);
+        File parent = f.getParentFile();
+        if (sample == 1 && new File(parent, stem + "_mip1.png").isFile()) return;   // the pack already has mips
+        android.graphics.BitmapFactory.Options d = new android.graphics.BitmapFactory.Options();
+        d.inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888;
+        d.inSampleSize = sample;     // big pictures are decoded already shrunk (less memory)
+        android.graphics.Bitmap base = android.graphics.BitmapFactory.decodeFile(f.getPath(), d);
+        if (base == null) return;
+        try {
+            int bw = w / sample, bh = h / sample;
+            if (base.getWidth() != bw || base.getHeight() != bh) {
+                android.graphics.Bitmap s = android.graphics.Bitmap.createScaledBitmap(base, bw, bh, true);
+                if (s != base) { base.recycle(); base = s; }
+            }
+            if (sample > 1) writePng(base, f);               // the smaller picture replaces the big one
+            // mip chain: each level exactly half (rounded down, at least 1) of the base, as the engine expects
+            android.graphics.Bitmap prev = base;
+            for (int level = 1; ; level++) {
+                int mw = Math.max(1, bw >> level), mh = Math.max(1, bh >> level);
+                android.graphics.Bitmap m = android.graphics.Bitmap.createScaledBitmap(prev, mw, mh, true);
+                writePng(m, new File(parent, stem + "_mip" + level + ".png"));
+                if (prev != base) prev.recycle();
+                prev = m;
+                if (mw == 1 && mh == 1) break;
+            }
+            if (prev != base) prev.recycle();
+        } finally {
+            base.recycle();
+        }
+    }
+
+    private static void writePng(android.graphics.Bitmap b, File out) throws IOException {
+        File tmp = new File(out.getPath() + ".tmp");
+        try (FileOutputStream fo = new FileOutputStream(tmp)) {
+            b.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, fo);
+        }
+        if (!tmp.renameTo(out)) {
+            if (out.exists() && out.delete() && tmp.renameTo(out)) return;
+            //noinspection ResultOfMethodCallIgnored
+            tmp.delete();
+            throw new IOException("could not write " + out.getName());
+        }
+    }
 }

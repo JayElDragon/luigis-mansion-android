@@ -60,7 +60,10 @@ void deliver(void* ptr) {
 }
 }
 extern "C" JNIEXPORT void JNICALL Java_org_libsdl_app_MyGame_nativeBridgeInit(JNIEnv* env,jclass,jstring path) {
-    lib=dlopen("libmain.so",RTLD_NOW);
+    // The game engine that is running: the DLC engine (libmain_pd.so) or the normal one (libmain.so).
+    lib=dlopen("libmain_pd.so",RTLD_NOW|RTLD_NOLOAD);
+    if(!lib) lib=dlopen("libmain.so",RTLD_NOW|RTLD_NOLOAD);
+    if(!lib) lib=dlopen("libmain.so",RTLD_NOW);
     const char* p=env->GetStringUTFChars(path,nullptr);
     snprintf(settings,sizeof settings,"%s",p); env->ReleaseStringUTFChars(path,p);
 }

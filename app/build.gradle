@@ -9,10 +9,28 @@ android {
         applicationId "com.personal.luigismansion"
         minSdkVersion 33
         targetSdkVersion 35
-        versionCode 1
-        versionName "1.0"
+        versionCode 4
+        versionName "1.3"
         ndk {
             abiFilters 'arm64-v8a'
+        }
+    }
+    // Two apps from the same code (Build > Select Build Variant in Android Studio):
+    //   playerDebug / playerRelease : the public app (com.personal.luigismansion), "Luigis Mansion Recomp"
+    //   devDebug    / devRelease    : the test app (com.personal.luigismansion.dev), "LM Dev"
+    // They install side by side with separate settings, saves and game file, so changes can be tried in
+    // the dev app first and then shipped in the player app by building the other variant. No code is copied.
+    flavorDimensions = ["channel"]
+    productFlavors {
+        player {
+            dimension "channel"
+            manifestPlaceholders = [appLabel: "Luigis Mansion Recomp"]
+        }
+        dev {
+            dimension "channel"
+            applicationIdSuffix ".dev"
+            versionNameSuffix "-dev"
+            manifestPlaceholders = [appLabel: "LM Dev"]
         }
     }
     buildTypes {

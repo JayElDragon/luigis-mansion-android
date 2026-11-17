@@ -10,8 +10,20 @@ public class FilesView extends View {
     public interface Listener { void onAction(int action); }
     private final Listener listener;
     private final String current;
-    private final String[] labels = {"Install game (ISO / RVZ)", "Remove installed game", "Back"};
-    private final String[] details = {"Choose a disc to copy into the port's storage", "Remove the installed copy from this app", "Return to the main menu"};
+    private final String[] labels = {"Install game (ISO / RVZ)", "Install DLC (Premium Deluxe)", "Back"};
+    private final String[] details = {"Choose your USA disc (ISO / RVZ)", "Add Premium Deluxe from its .xdelta or GameBanana .zip", "Return to the main menu"};
+    private String dlcStatus;  // shown under the current disc, e.g. "DLC installed: Premium Deluxe 2.2.1"
+    private String progressTitle = "Installing…", progressSub = "Copying your disc into the port's storage";
+
+    /** Game Files with the DLC row: after the game is set up the second button is Install DLC (no Remove). */
+    public FilesView(Context c, String current, boolean gameReady, String dlcStatus, Listener listener) {
+        this(c, current, listener);
+        this.dlcStatus = dlcStatus;
+        if (!gameReady) details[1] = "Set up your USA game first, then add the DLC";
+        else if (dlcStatus != null) details[1] = "Installed ✓  ·  choose a patch again to reinstall";
+    }
+
+    void setProgressText(String title, String sub) { progressTitle = title; progressSub = sub; }
     private boolean installing;
     private long installedBytes, totalBytes;
     void setInstallProgress(long done,long total) {
@@ -21,6 +33,11 @@ public class FilesView extends View {
     private final RectF[] buttons = new RectF[3];
     private Bitmap plate;
     private float scale = 1, ox, oy;
+    // Widescreen like Options: the picture fills the height and a thin band of the frame (x 1134..1146)
+    // stretches sideways, so the panel and everything right of the band slide right by "extra".
+    private static final float BAND0 = 1134f, BAND1 = 1146f;
+    private float extra = 0f;
+    private final RectF[] baseButtons = new RectF[3];
     private int selected, pressed = -1;
     private boolean axisHeld;
     private int previousSelection=-1;
@@ -36,16 +53,23 @@ public class FilesView extends View {
         try (InputStream in = c.getAssets().open("files_plate.png")) {
             plate = BitmapFactory.decodeStream(in);
         } catch (java.io.IOException ignored) { }
-        for (int i = 0; i < buttons.length; i++) buttons[i] = new RectF(490, 330 + i * 145, 1295, 445 + i * 145);
+        for (int i = 0; i < buttons.length; i++) {
+            baseButtons[i] = new RectF(490, 330 + i * 145, 1295, 445 + i * 145);
+            buttons[i] = new RectF(baseButtons[i]);
+        }
     }
 
     @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         scale = Math.min(w / 1672f, h / 941f);
-        ox = (w - 1672 * scale) / 2;
+        extra = Math.max(0f, w / scale - 1672f);
+        ox = extra == 0f ? (w - 1672 * scale) / 2 : 0f;
         oy = (h - 941 * scale) / 2;
+        for (int i = 0; i < buttons.length; i++) buttons[i].set(baseButtons[i].left, baseButtons[i].top,
+                baseButtons[i].right + extra, baseButtons[i].bottom);
     }
 
     private void text(Canvas c, String value, float x, float y, float size, int color) {
+        value = Lang.t(value);
         p.setShader(null);
         p.setColor(color);
         p.setTypeface(size <= 28 ? Typeface.DEFAULT : Typeface.DEFAULT_BOLD);
@@ -74,24 +98,38 @@ public class FilesView extends View {
         c.drawColor(0xFF04080C);
         c.save(); c.translate(ox, oy); c.scale(scale, scale);
         p.setColor(0xFFFFFFFF);
-        if (plate != null) c.drawBitmap(plate, null, new RectF(0, 0, 1672, 941), p);
+        if (plate != null) {
+            float k = plate.getWidth() / 1672f;
+            float[] sx = {0f, BAND0, BAND1, 1672f};
+            float[] dx = {0f, BAND0, BAND1 + extra, 1672f + extra};
+            for (int i = 0; i < 3; i++)
+                c.drawBitmap(plate, new Rect(Math.round(sx[i] * k), 0, Math.round(sx[i + 1] * k), plate.getHeight()),
+                        new RectF(dx[i], 0, dx[i + 1], 941), p);
+        }
         p.setColor(0xFF175D26);
         c.drawRoundRect(new RectF(148, 207, 432, 299), 12, 12, p);
+        if (Lang.es) {  // Spanish title and button hints painted in the frame's own style
+            Bitmap t = Lang.art(getContext(), "es_files_title.png"), h = Lang.art(getContext(), "es_files_hints.png");
+            if (t != null) c.drawBitmap(t, null, new RectF(620, 48, 620 + t.getWidth(), 48 + t.getHeight()), p);
+            if (h != null) c.drawBitmap(h, null, new RectF(1432 + extra, 874, 1432 + extra + h.getWidth(), 874 + h.getHeight()), p);
+        }
         text(c, "Game Files", 185, 264, 31, 0xFFE6E8F6);
         text(c, "Current disc", 510, 236, 34, 0xFFFBEEDC);
-        String name = current;
+        String full = Lang.t(current);
+        String name = full;
         p.setTextSize(28);
-        while (name.length() > 1 && p.measureText(name) > 730) name = name.substring(0, name.length() - 1);
-        if (!name.equals(current)) name += "…";
+        while (name.length() > 1 && p.measureText(name) > 730 + extra) name = name.substring(0, name.length() - 1);
+        if (!name.equals(full)) name += "…";
         text(c, name, 510, 281, 28, 0xFF9AB3C4);
+        if (dlcStatus != null) text(c, dlcStatus, 1000, 236, 26, 0xFF92EC75);
         if(installing) {
-            text(c,"Installing…",525,390,40,0xFFFBEEDC);
-            text(c,"Copying your disc into the port's storage",525,445,25,0xFF9AB3C4);
-            p.setColor(0xFF10272E); c.drawRoundRect(525,490,1260,535,18,18,p);
+            text(c,progressTitle,525,390,40,0xFFFBEEDC);
+            text(c,progressSub,525,445,25,0xFF9AB3C4);
+            p.setColor(0xFF10272E); c.drawRoundRect(525,490,1260+extra,535,18,18,p);
             float fraction=totalBytes>0?Math.min(.99f,installedBytes/(float)totalBytes):0;
             p.setColor(0xFF74DB65);
-            if(totalBytes>0) c.drawRoundRect(525,490,525+735*fraction,535,18,18,p);
-            else { float x=525+(now%1800)/1800f*595; c.drawRoundRect(x,490,x+140,535,18,18,p); }
+            if(totalBytes>0) c.drawRoundRect(525,490,525+(735+extra)*fraction,535,18,18,p);
+            else { float x=525+(now%1800)/1800f*(595+extra); c.drawRoundRect(x,490,x+140,535,18,18,p); }
             String amount=String.format(java.util.Locale.US,"%d MB",installedBytes>>20);
             if(totalBytes>0) amount=String.format(java.util.Locale.US,"%d%%   ·   %d / %d MB",(int)(fraction*100),installedBytes>>20,totalBytes>>20);
             text(c,amount,525,595,29,0xFFFBEEDC);
@@ -121,7 +159,7 @@ public class FilesView extends View {
     private int hit(float x, float y) {
         x = (x - ox) / scale; y = (y - oy) / scale;
         for (int i = 0; i < buttons.length; i++) if (buttons[i].contains(x, y)) return i;
-        if (x > 1490 && y > 860) return 2;
+        if (x > 1490 + extra && y > 860) return 2;
         return -1;
     }
     @Override public boolean onTouchEvent(MotionEvent e) {

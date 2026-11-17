@@ -164,6 +164,7 @@ class SDLJoystickHandler {
         String desc;
         ArrayList<InputDevice.MotionRange> axes;
         ArrayList<InputDevice.MotionRange> hats;
+        int camX = -1, camY = -1;  // camera (right) stick axes, MotionEvent.AXIS_* ; StickCurve applies to these
         ArrayList<Light> lights;
         LightsManager.LightsSession lightsSession;
         SensorManager sensorManager;
@@ -256,6 +257,16 @@ class SDLJoystickHandler {
                             }
                         }
                     }
+
+                    // Right stick: Z/RZ on most pads (Xbox, PlayStation, Switch Pro); RX/RY on some generic ones.
+                    boolean hasZ = false, hasRz = false, hasRx = false, hasRy = false;
+                    for (InputDevice.MotionRange r : joystick.axes) {
+                        int ax = r.getAxis();
+                        hasZ |= ax == MotionEvent.AXIS_Z; hasRz |= ax == MotionEvent.AXIS_RZ;
+                        hasRx |= ax == MotionEvent.AXIS_RX; hasRy |= ax == MotionEvent.AXIS_RY;
+                    }
+                    if (hasZ && hasRz) { joystick.camX = MotionEvent.AXIS_Z; joystick.camY = MotionEvent.AXIS_RZ; }
+                    else if (hasRx && hasRy) { joystick.camX = MotionEvent.AXIS_RX; joystick.camY = MotionEvent.AXIS_RY; }
 
                     boolean can_rumble = false;
                     boolean has_rgb_led = false;
@@ -365,6 +376,8 @@ class SDLJoystickHandler {
                     InputDevice.MotionRange range = joystick.axes.get(i);
                     /* Normalize the value to -1...1 */
                     float value = (event.getAxisValue(range.getAxis(), actionPointerIndex) - range.getMin()) / range.getRange() * 2.0f - 1.0f;
+                    if (range.getAxis() == joystick.camX || range.getAxis() == joystick.camY) value = StickCurve.apply(value);
+                    if (range.getAxis() == joystick.camY) value = DlcInput.rightStickY(value);
                     SDLControllerManager.onNativeJoy(joystick.device_id, i, value);
                 }
                 for (int i = 0; i < joystick.hats.size() / 2; i++) {

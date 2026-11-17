@@ -5,6 +5,15 @@
 
 // libc / libdl (resolved by the Android linker at load time)
 extern void* dlopen(const char*, int);
+#define RTLD_NOW_ 2
+#define RTLD_NOLOAD_ 4
+/** The game engine that is running: the DLC engine (libmain_pd.so) or the normal one (libmain.so). */
+static void* engine(void) {
+    void* h = dlopen("libmain_pd.so", RTLD_NOW_ | RTLD_NOLOAD_);
+    if (!h) h = dlopen("libmain.so", RTLD_NOW_ | RTLD_NOLOAD_);
+    if (!h) h = dlopen("libmain.so", RTLD_NOW_);
+    return h;
+}
 extern void* dlsym(void*, const char*);
 
 typedef unsigned long usize;
@@ -50,7 +59,7 @@ static void deliver(void* unused) {   // runs on the game's own thread
 // returns 0 = queued, <0 = this engine build can't do it
 JNIEXPORT jint JNICALL Java_org_libsdl_app_TexturePacks_nativeApply(JNIEnv* env, jclass cls, jstring path) {
     (void)cls;
-    if (!lib) lib = dlopen("libmain.so", 2 /* RTLD_NOW */);
+    if (!lib) lib = engine();
     if (!lib) return -1;
     if (!dlsym(lib, kFromString) || !dlsym(lib, kLoad) || !dlsym(lib, kUnregister)) return -2;
     RunOnMainFn run = (RunOnMainFn)dlsym(lib, "SDL_RunOnMainThread");
@@ -66,3 +75,28 @@ JNIEXPORT jint JNICALL Java_org_libsdl_app_TexturePacks_nativeApply(JNIEnv* env,
     return 0;
 }
 
+
+// ---------------------------------------------------------------------------------------------
+// Boost CPU (Options > Graphics, high-end phones only): keep the game's busiest threads on the fast
+// cores. A thread of our own app may change its own CPU set; this is the plain Linux call, made
+// directly so no extra library is needed. mask = bit per CPU core; 0 = all cores again.
+// ---------------------------------------------------------------------------------------------
+static long sys3(long n, long a, long b, long c) {
+    register long x8 __asm__("x8") = n;
+    register long x0 __asm__("x0") = a;
+    register long x1 __asm__("x1") = b;
+    register long x2 __asm__("x2") = c;
+    __asm__ volatile("svc #0" : "+r"(x0) : "r"(x8), "r"(x1), "r"(x2) : "memory");
+    return x0;
+}
+
+#define NR_SCHED_SETAFFINITY 122
+
+// returns 0 on success, a negative errno otherwise
+JNIEXPORT jint JNICALL Java_org_libsdl_app_Boost_nativeSetAffinity(JNIEnv* env, jclass cls, jint tid, jlong mask) {
+    (void)env; (void)cls;
+    unsigned long m[2];
+    if (mask == 0) { m[0] = ~0UL; m[1] = ~0UL; }
+    else { m[0] = (unsigned long)mask; m[1] = 0; }
+    return (jint)sys3(NR_SCHED_SETAFFINITY, tid, sizeof m, (long)m);
+}

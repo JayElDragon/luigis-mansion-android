@@ -25,7 +25,209 @@ import java.util.Random;
 public class MenuView extends View {
     public interface Listener { void onItem(int index); }
 
+    /** onItem codes from the Play choice (only when the DLC is installed). */
+    public static final int PLAY_ORIGINAL = 10, PLAY_DLC = 11;
+
+    // ---- Play choice: when the DLC is installed, Play opens "Play" / "Play DLC" right under it ----
+    private boolean choiceOpen;
+    private int choiceSel;
+    private long choiceOpenedAt;
+    private Bitmap choicePlay, choiceDlc;
+    private final RectF[] choiceRects = {new RectF(), new RectF()};
+    private final RectF choiceHit0 = new RectF(), choiceHit1 = new RectF();
+
+    public boolean isChoiceOpen() { return choiceOpen; }
+
+    public void openPlayChoice() {
+        if (choicePlay == null) {
+            try (InputStream in = getContext().getAssets().open("btn_play.png")) { choicePlay = BitmapFactory.decodeStream(in); } catch (Throwable ignored) { }
+            try (InputStream in = getContext().getAssets().open("btn_play_dlc.png")) { choiceDlc = BitmapFactory.decodeStream(in); } catch (Throwable ignored) { }
+        }
+        choiceOpen = true;
+        choiceSel = 0;
+        choiceOpenedAt = android.os.SystemClock.uptimeMillis();
+        invalidate();
+    }
+
+    public void closePlayChoice() { choiceOpen = false; invalidate(); }
+
+    private void chooseFromChoice(int i) {
+        choiceOpen = false;
+        invalidate();
+        if (listener != null) listener.onItem(i == 0 ? PLAY_ORIGINAL : PLAY_DLC);
+    }
+
+    /** Español: the artwork's button labels and A/B hints, repainted in the same style (assets/es_*.png). */
+    private void drawSpanishArt(Canvas cv) {
+        if (!Lang.es) return;
+        float s = artworkBounds.height() / 941f;
+        float[] ys = {430f, 553f, 674f, 790f};
+        int[][] at = {{170, 440}, {170, 563}, {170, 684}, {170, 800}};
+        p.setShader(null);
+        p.setAlpha(255);
+        p.setFilterBitmap(true);
+        for (int i = 0; i < 4; i++) {
+            Bitmap b = Lang.art(getContext(), "es_btn" + i + ".png");
+            if (b == null) continue;
+            float x = rects[i].left + (at[i][0] - 76f) * s, y = rects[i].top + (at[i][1] - ys[i]) * s;
+            rf.set(x, y, x + b.getWidth() * s, y + b.getHeight() * s);
+            cv.drawBitmap(b, null, rf, p);
+            int a = swapAlpha(i);
+            Bitmap sw = a > 0 ? swapped(b, i != 0) : null;
+            if (sw != null) { p.setAlpha(a); cv.drawBitmap(sw, null, rf, p); p.setAlpha(255); }
+        }
+        String[] hn = {"es_hint_a.png", "es_hint_b.png"};
+        int[][] hp = {{1368, 46}, {1552, 46}};
+        for (int i = 0; i < 2; i++) {
+            Bitmap b = Lang.art(getContext(), hn[i]);
+            if (b == null) continue;
+            float x = artworkBounds.left + (hp[i][0] + shiftAt(hp[i][0] + 50f, hp[i][1] + 20f)) * s, y = artworkBounds.top + hp[i][1] * s;
+            rf.set(x, y, x + b.getWidth() * s, y + b.getHeight() * s);
+            cv.drawBitmap(b, null, rf, p);
+        }
+    }
+
+    /** The two buttons use the art's own Play button (crop 60..740 x 415..560) at the Play button's place and right below it. */
+    private void drawPlayChoice(Canvas cv, long now) {
+        float s = artworkBounds.height() / 941f;
+        float t = Math.min(1f, (now - choiceOpenedAt) / 220f);
+        float ease = 1f - (1f - t) * (1f - t);
+        p.setShader(null);
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(android.graphics.Color.argb((int) (150 * ease), 0, 0, 0));
+        cv.drawRect(0, 0, getWidth(), getHeight(), p);
+        RectF play = rects[0];
+        // crop origin relative to the Play button rect (art 76,430): crop starts at art 60,415
+        float cx = play.left - 16f * s, cy = play.top - 15f * s, cw = 680f * s, ch = 145f * s;
+        float step = 127f * s * ease;
+        choiceRects[0].set(cx, cy, cx + cw, cy + ch);
+        choiceRects[1].set(cx, cy + step, cx + cw, cy + step + ch);
+        choiceHit0.set(play.left, play.top, play.right, play.bottom);
+        choiceHit1.set(play.left, play.top + step, play.right, play.bottom + step);
+        p.setFilterBitmap(true);
+        Bitmap bPlay = Lang.es ? Lang.art(getContext(), "btn_play_es.png") : choicePlay;
+        Bitmap bDlc = Lang.es ? Lang.art(getContext(), "btn_play_dlc_es.png") : choiceDlc;
+        // only the one under the cursor stays green
+        if (choiceSel != 1) bDlc = swapped(bDlc, false);
+        if (choiceSel != 0) bPlay = swapped(bPlay, false);
+        if (bDlc != null) { p.setAlpha((int) (255 * ease)); cv.drawBitmap(bDlc, null, choiceRects[1], p); }
+        p.setAlpha(255);
+        if (bPlay != null) cv.drawBitmap(bPlay, null, choiceRects[0], p);
+        RectF r = choiceSel == 0 ? choiceHit0 : choiceHit1;
+        float pulse = .5f + .5f * (float) Math.sin(now / 340.0);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(getHeight() * .014f);
+        p.setColor(0x7052FF63);
+        cv.drawRoundRect(r, 18, 18, p);
+        p.setStrokeWidth(getHeight() * .0045f);
+        p.setColor(android.graphics.Color.argb(210 + (int) (45 * pulse), 220, 255, 190));
+        cv.drawRoundRect(r, 18, 18, p);
+        p.setStyle(Paint.Style.FILL);
+    }
+
     private static final String[] LABELS = {"Play", "Options", "Game Files", "Quit"};
+
+    // ---- The green "selected" plate follows the selection: the painted art has Play green and the rest blue,
+    // so the selected button gets a green copy of its plate and Play gets a blue one when it is not selected.
+    // The letters stay as painted: the flood fill starts at the edge and stops at the white letter outline.
+    private static final int PLATE_PAD = 10;
+    private final Bitmap[] plateSwap = new Bitmap[4];
+    private final RectF[] plateDst = {new RectF(), new RectF(), new RectF(), new RectF()};
+    private final java.util.IdentityHashMap<Bitmap, Bitmap> toBlue = new java.util.IdentityHashMap<>(), toGreen = new java.util.IdentityHashMap<>();
+
+    /** Copy of src's region with the plate (everything reachable from the edge without crossing white) turned green or blue. */
+    static Bitmap swapPlate(Bitmap src, int x0, int y0, int w, int h, boolean green) {
+        x0 = Math.max(0, x0); y0 = Math.max(0, y0);
+        w = Math.min(w, src.getWidth() - x0); h = Math.min(h, src.getHeight() - y0);
+        if (w <= 2 || h <= 2) return null;
+        int n = w * h;
+        int[] px = new int[n];
+        src.getPixels(px, 0, w, x0, y0, w, h);
+        byte[] seen = new byte[n];
+        int[] stack = new int[n];
+        int sp = 0;
+        for (int x = 0; x < w; x++) { stack[sp++] = x; stack[sp++] = (h - 1) * w + x; }
+        for (int y = 1; y < h - 1; y++) { stack[sp++] = y * w; stack[sp++] = y * w + w - 1; }
+        for (int i = 0; i < sp; i++) seen[stack[i]] = 1;
+        while (sp > 0) {
+            int k = stack[--sp];
+            int c = px[k];
+            if (Math.min((c >> 16) & 255, Math.min((c >> 8) & 255, c & 255)) > 185) continue;   // white outline
+            seen[k] = 2;
+            int x = k % w;
+            if (x > 0 && seen[k - 1] == 0) { seen[k - 1] = 1; stack[sp++] = k - 1; }
+            if (x < w - 1 && seen[k + 1] == 0) { seen[k + 1] = 1; stack[sp++] = k + 1; }
+            if (k >= w && seen[k - w] == 0) { seen[k - w] = 1; stack[sp++] = k - w; }
+            if (k < n - w && seen[k + w] == 0) { seen[k + w] = 1; stack[sp++] = k + w; }
+        }
+        float[] hsv = new float[3];
+        for (int k = 0; k < n; k++) {
+            if (seen[k] != 2) continue;
+            int c = px[k];
+            android.graphics.Color.colorToHSV(c, hsv);
+            if (green) {
+                if (hsv[0] < 175 || hsv[0] > 265 || hsv[1] <= .15f || hsv[2] >= .74f) continue;
+                hsv[0] = 121; hsv[1] *= .8f; hsv[2] = Math.min(1f, hsv[2] * 1.25f);
+            } else {
+                if (hsv[0] < 65 || hsv[0] > 170 || hsv[1] <= .15f) continue;
+                hsv[0] = 211; hsv[1] = Math.min(1f, hsv[1] * 1.25f); hsv[2] *= .8f;
+            }
+            px[k] = android.graphics.Color.HSVToColor(c >>> 24, hsv);
+        }
+        return Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888);
+    }
+
+    /** Whole-bitmap version, cached (button art and the Spanish label repaints). */
+    private Bitmap swapped(Bitmap b, boolean green) {
+        if (b == null) return null;
+        java.util.IdentityHashMap<Bitmap, Bitmap> m = green ? toGreen : toBlue;
+        Bitmap r = m.get(b);
+        if (r == null && !m.containsKey(b)) {
+            try { r = swapPlate(b, 0, 0, b.getWidth(), b.getHeight(), green); } catch (Throwable ignored) { }
+            m.put(b, r);
+        }
+        return r;
+    }
+
+    private void buildPlateSwaps(Bitmap src, float s) {
+        for (int i = 0; i < 4; i++) {
+            plateSwap[i] = null;
+            try {
+                int x0 = Math.round((rects[i].left - artworkBounds.left) / s) - PLATE_PAD;
+                int y0 = Math.round((rects[i].top - artworkBounds.top) / s) - PLATE_PAD;
+                int x1 = Math.round((rects[i].right - artworkBounds.left) / s) + PLATE_PAD;
+                int y1 = Math.round((rects[i].bottom - artworkBounds.top) / s) + PLATE_PAD;
+                plateSwap[i] = swapPlate(src, x0, y0, x1 - x0, y1 - y0, i != 0);
+                plateDst[i].set(artworkBounds.left + Math.max(0, x0) * s, artworkBounds.top + Math.max(0, y0) * s, 0, 0);
+                if (plateSwap[i] != null) plateDst[i].set(plateDst[i].left, plateDst[i].top,
+                        plateDst[i].left + plateSwap[i].getWidth() * s, plateDst[i].top + plateSwap[i].getHeight() * s);
+            } catch (Throwable ignored) { plateSwap[i] = null; }
+        }
+    }
+
+    /** How much of the swapped plate to show: Play's blue copy fades in as Play loses focus, the others' green copies as they gain it. */
+    private final float[] greenness = {1f, 0f, 0f, 0f};
+
+    /** Green only under the cursor: Play's blue copy fades in when it loses focus, the others' green copies when they gain it. */
+    private int swapAlpha(int i) {
+        float g = greenness[i];
+        return Math.round(255 * (i == 0 ? 1f - g : g));
+    }
+
+    private void drawPlates(Canvas cv, float f) {
+        p.setShader(null);
+        p.setFilterBitmap(true);
+        for (int i = 0; i < 4; i++) {
+            float want = i == sel ? 1f : 0f;
+            greenness[i] += (want - greenness[i]) * f;
+            if (Math.abs(want - greenness[i]) < .01f) greenness[i] = want;
+            int a = swapAlpha(i);
+            if (plateSwap[i] == null || a <= 0) continue;
+            p.setAlpha(a);
+            cv.drawBitmap(plateSwap[i], null, plateDst[i], p);
+        }
+        p.setAlpha(255);
+    }
 
     private final RectF[] rects = new RectF[4];
     private final Shader[] btnShader = new Shader[4];
@@ -187,6 +389,7 @@ public class MenuView extends View {
                 float dx = shiftAt(390f, (ys[i] + bottoms[i]) / 2f);
                 rects[i].set(x + (76f + dx) * s, top + ys[i] * s, x + (710f + dx) * s, top + bottoms[i] * s);
             }
+            buildPlateSwaps(wideArt != null ? wideArt : artwork, s);
         }
     }
 
@@ -220,6 +423,8 @@ public class MenuView extends View {
             long now = android.os.SystemClock.uptimeMillis();
             float dt = Math.min(100, now - lastFrame); lastFrame = now;
             float f = 1f - (float)Math.exp(-dt / 65f);
+            drawPlates(cv, f);
+            drawSpanishArt(cv);
             RectF target = rects[sel];
             if (focusRing.isEmpty()) focusRing.set(target);
             focusRing.set(focusRing.left + (target.left-focusRing.left)*f,
@@ -237,6 +442,7 @@ public class MenuView extends View {
             p.setStyle(Paint.Style.FILL);
             drawAtmosphere(cv, now);
             drawPortCredit(cv);
+            if (choiceOpen) drawPlayChoice(cv, now);
             p.setColor(0xFFFFFFFF);
             if (alive()) scheduleFrame(
                     getContext().getSharedPreferences("lm",Context.MODE_PRIVATE).getInt("g_fps",60)<=30?66:33);
@@ -496,7 +702,7 @@ public class MenuView extends View {
         tp.setTextSize(17f*unit);
         tp.setColor(0xFFE7F4F6);
         tp.setShadowLayer(4f*unit,0,unit,0xFF000000);
-        cv.drawText("Unofficial port by MsBunnana & JayElDragon",
+        cv.drawText(Lang.t("Unofficial port by MsBunnana & JayElDragon"),
                 artworkBounds.right-20f*unit,artworkBounds.bottom-16f*unit,tp);
         tp.clearShadowLayer();
         tp.setTextAlign(Paint.Align.CENTER);
@@ -516,7 +722,7 @@ public class MenuView extends View {
         tp.setTextSize(0.033f * u);
         tp.setColor(0xE6FFFFFF);
         tp.setShadowLayer(0.008f * u, 0, 0.003f * u, 0xCC000000);
-        cv.drawText("Unofficial port by MsBunnana & JayElDragon", w - 0.045f * u, 0.965f * u, tp);
+        cv.drawText(Lang.t("Unofficial port by MsBunnana & JayElDragon"), w - 0.045f * u, 0.965f * u, tp);
         tp.setShadowLayer(0, 0, 0, 0);
         tp.setTextAlign(Paint.Align.CENTER);
         tp.setLetterSpacing(0f);
@@ -722,10 +928,10 @@ public class MenuView extends View {
         tp.setStrokeJoin(Paint.Join.ROUND);
         tp.setColor(play ? 0xFF14500F : 0xFF0A2C70);
         float ty = r.centerY() + size * 0.34f;
-        cv.drawText(LABELS[i], r.centerX(), ty, tp);
+        cv.drawText(Lang.t(LABELS[i]), r.centerX(), ty, tp);
         tp.setStyle(Paint.Style.FILL);
         tp.setColor(0xFFFFFFFF);
-        cv.drawText(LABELS[i], r.centerX(), ty, tp);
+        cv.drawText(Lang.t(LABELS[i]), r.centerX(), ty, tp);
     }
 
     private void drawHints(Canvas cv, int w, float u) {
@@ -755,7 +961,7 @@ public class MenuView extends View {
         cv.drawText(letter, cx, cy + rad * 0.42f, tp);
         tp.setTextAlign(Paint.Align.LEFT);
         tp.setTextSize(0.036f * u);
-        cv.drawText(label, tx, cy + 0.013f * u, tp);
+        cv.drawText(Lang.t(label), tx, cy + 0.013f * u, tp);
         tp.setTextAlign(Paint.Align.CENTER);
     }
 
@@ -767,6 +973,16 @@ public class MenuView extends View {
 
     @Override public boolean onTouchEvent(MotionEvent e) {
         int act = e.getActionMasked();
+        if (choiceOpen) {
+            int idx = choiceHit0.contains(e.getX(), e.getY()) ? 0 : choiceHit1.contains(e.getX(), e.getY()) ? 1 : -1;
+            if (act == MotionEvent.ACTION_DOWN) { downIdx = idx; if (idx >= 0) { choiceSel = idx; invalidate(); } }
+            else if (act == MotionEvent.ACTION_UP) {
+                if (idx >= 0 && idx == downIdx) chooseFromChoice(idx);
+                else if (idx < 0 && downIdx < 0) closePlayChoice();  // tap outside closes
+                downIdx = -1;
+            }
+            return true;
+        }
         if (act == MotionEvent.ACTION_DOWN || act == MotionEvent.ACTION_MOVE) {
             int idx = hit(e.getX(), e.getY());
             if (act == MotionEvent.ACTION_DOWN) downIdx = idx;
@@ -788,12 +1004,25 @@ public class MenuView extends View {
     }
 
     @Override public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (choiceOpen) {
+            switch (keyCode) {
+                case KeyEvent.KEYCODE_DPAD_UP: case KeyEvent.KEYCODE_DPAD_DOWN:
+                    choiceSel = 1 - choiceSel; invalidate(); return true;
+                case KeyEvent.KEYCODE_BUTTON_A: case KeyEvent.KEYCODE_BUTTON_START:
+                case KeyEvent.KEYCODE_ENTER: case KeyEvent.KEYCODE_DPAD_CENTER:
+                    chooseFromChoice(choiceSel); return true;
+                case KeyEvent.KEYCODE_BUTTON_B:
+                    closePlayChoice(); return true;
+                default: return super.onKeyDown(keyCode, event);
+            }
+        }
         switch (keyCode) {
             case KeyEvent.KEYCODE_DPAD_UP:
                 sel = (sel + 3) % 4; invalidate(); return true;
             case KeyEvent.KEYCODE_DPAD_DOWN:
                 sel = (sel + 1) % 4; invalidate(); return true;
             case KeyEvent.KEYCODE_BUTTON_A:
+            case KeyEvent.KEYCODE_BUTTON_START:
             case KeyEvent.KEYCODE_ENTER:
             case KeyEvent.KEYCODE_DPAD_CENTER:
                 activate(sel); return true;
@@ -809,7 +1038,8 @@ public class MenuView extends View {
             if (Math.abs(v) > 0.6f) {
                 if (!axisHeld) {
                     axisHeld = true;
-                    sel = v < 0 ? (sel + 3) % 4 : (sel + 1) % 4;
+                    if (choiceOpen) choiceSel = 1 - choiceSel;
+                    else sel = v < 0 ? (sel + 3) % 4 : (sel + 1) % 4;
                     invalidate();
                 }
             } else {

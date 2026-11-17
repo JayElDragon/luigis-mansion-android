@@ -389,12 +389,12 @@ public class TouchOverlay extends View implements InputManager.InputDeviceListen
             cv.drawRoundRect(tb[i], bh / 2, bh / 2, ring);
             text.setColor(0xFFFFFFFF);
             text.setTextSize(0.034f * u);
-            cv.drawText(TB[i], tb[i].centerX(), tb[i].centerY() + text.getTextSize() * 0.36f, text);
+            cv.drawText(Lang.t(TB[i]), tb[i].centerX(), tb[i].centerY() + text.getTextSize() * 0.36f, text);
         }
         text.setColor(0xFFFFFFFF);
         text.setTextSize(0.03f * u);
-        cv.drawText(sel == null ? "Tap a button, then drag it. Pinch or use - / + to resize."
-                : "Drag to move. Pinch or use - / + to resize.", w / 2f, y0 - 0.025f * u, text);
+        cv.drawText(Lang.t(sel == null ? "Tap a button, then drag it. Pinch or use - / + to resize."
+                : "Drag to move. Pinch or use - / + to resize."), w / 2f, y0 - 0.025f * u, text);
         fill.setAlpha(255);
     }
 
@@ -744,6 +744,6 @@ public class TouchOverlay extends View implements InputManager.InputDeviceListen
             if (c.trigger == 1) rt = 1;
         }
         sentDetach = false;
-        if (!preview) MyGame.nativeBridgeInput(buttons, ls.dx, ls.dy, cs.dx, cs.dy, lt, rt);
+        if (!preview) MyGame.nativeBridgeInput(buttons, ls.dx, ls.dy, cs.dx, DlcInput.rightStickY(cs.dy), lt, rt);
     }
 }
