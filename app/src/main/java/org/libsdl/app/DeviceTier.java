@@ -79,15 +79,32 @@ final class DeviceTier {
         return n >= 2 ? mask : 0;
     }
 
-    /** The game's cores: the first 3 of the efficient class. Measured on the Odin 3 in the mansion at 120 fps:
-     *  the game needs about 1.5 cores of work and held 121.7 fps on 2 cores; the 3rd is headroom for heavy rooms. */
+    /**
+     * The game's cores: 3 cores of the fast classes just below the top one, never the small cores.
+     * Measured on the Odin 3 (8 Elite: 6 x 3.53 GHz + 2 x 4.32 GHz) in the mansion at 120 fps: the game needs
+     * about 1.5 cores of work and held 121.7 fps on 2 performance cores; the 3rd is headroom for heavy rooms.
+     * Classes are taken from the top speed down, skipping the top class, and only while a class is at least 75%
+     * of the top speed: on an 8 Gen 2 (AYN Thor: 3 x 2.0 + 4 x 2.8 + 1 x 3.36 GHz) that is 3 of the 2.8 GHz
+     * cores. (Taking "the first 3 below the top class" there picked cpu0-2, the 2.0 GHz small cores: 20 fps.)
+     * 0 (no pinning, the system decides) when there are not 3 such cores or the speeds are unknown.
+     */
     static long gameCoreMask() {
-        long cool = coolCoreMask();
-        if (cool == 0) return 0;
+        long[] f = coreMaxFreqs();
+        long max = 0;
+        for (long v : f) max = Math.max(max, v);
+        if (max == 0) return 0;
+        java.util.TreeSet<Long> classes = new java.util.TreeSet<>(java.util.Collections.reverseOrder());
+        for (long v : f) if (v > 0) classes.add(v);
         long m = 0;
         int n = 0;
-        for (int i = 0; i < 63 && n < 3; i++) if ((cool & (1L << i)) != 0) { m |= 1L << i; n++; }
-        return m;
+        boolean top = true;
+        for (long cls : classes) {
+            if (top) { top = false; continue; }                 // the hottest class stays free
+            if (cls < max * 75 / 100) break;                    // small cores: never
+            for (int i = 0; i < f.length && i < 63 && n < 3; i++) if (f[i] == cls) { m |= 1L << i; n++; }
+            if (n >= 3) break;
+        }
+        return n >= 3 ? m : 0;
     }
 
     static long readLong(String path) {

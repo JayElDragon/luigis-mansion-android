@@ -1,9 +1,9 @@
 package org.libsdl.app;
 
 /**
- * Vertical aim with the C-stick: stick up looks up, stick down looks down, in both editions.
- * Tested on the Odin 3 (C-stick = axes Z/RZ): the base game reads the stick's Y as it comes,
- * Premium Deluxe reads it the other way round, so only Premium Deluxe is flipped.
+ * Vertical aim with the C-stick: stick up looks up, stick down looks down.
+ * Tested on the Odin 3 (C-stick = axes Z/RZ): both the base game and Premium Deluxe need the stick's Y
+ * flipped for that. The edition is still kept in case one of them needs its own direction later.
  */
 final class DlcInput {
     private DlcInput() { }
@@ -16,6 +16,6 @@ final class DlcInput {
 
     /** Apply once, at the physical or touch input boundary, to the right stick Y only. */
     static float rightStickY(float value) {
-        return premiumDeluxe ? -value : value;
+        return -value;
     }
 }

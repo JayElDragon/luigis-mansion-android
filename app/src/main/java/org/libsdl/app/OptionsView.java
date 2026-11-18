@@ -417,6 +417,7 @@ public class OptionsView extends View {
         cheats.add(boolRow("pad", "Poltergust Ride", "Glide with momentum throughout the mansion", "cheat_ride", false));
         cheats.add(boolRow("wide", "Mirror Mansion", "Mirror the world and its controls", "cheat_mirror", false));
         cheats.add(boolRow("run", "Skip Cutscenes", "Press START during a cutscene to skip", "cheat_skip", false));
+        cheats.add(boolRow("spark", "Fast Boo Capture", "Boos (and all ghosts) caught much faster: max Poltergust, 25% health", "cheat_fast_boo", false));
         tabs.add(cheats);
 
         List<Row> help = new ArrayList<>();
