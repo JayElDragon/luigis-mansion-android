@@ -79,31 +79,53 @@ final class DeviceTier {
         return n >= 2 ? mask : 0;
     }
 
+    /** Each core's compute capacity as the kernel's scheduler sees it (1024 = the strongest), 0 when unknown. */
+    static long[] coreCapacities() {
+        int n = Runtime.getRuntime().availableProcessors();
+        long[] c = new long[n];
+        for (int i = 0; i < n; i++) c[i] = readLong("/sys/devices/system/cpu/cpu" + i + "/cpu_capacity");
+        return c;
+    }
+
     /**
-     * The game's cores: 3 cores of the fast classes just below the top one, never the small cores.
-     * Measured on the Odin 3 (8 Elite: 6 x 3.53 GHz + 2 x 4.32 GHz) in the mansion at 120 fps: the game needs
-     * about 1.5 cores of work and held 121.7 fps on 2 performance cores; the 3rd is headroom for heavy rooms.
-     * Classes are taken from the top speed down, skipping the top class, and only while a class is at least 75%
-     * of the top speed: on an 8 Gen 2 (AYN Thor: 3 x 2.0 + 4 x 2.8 + 1 x 3.36 GHz) that is 3 of the 2.8 GHz
-     * cores. (Taking "the first 3 below the top class" there picked cpu0-2, the 2.0 GHz small cores: 20 fps.)
-     * 0 (no pinning, the system decides) when there are not 3 such cores or the speeds are unknown.
+     * The game's cores, never small cores. Measured on the Odin 3 (8 Elite: 6 x 3.53 GHz + 2 x 4.32 GHz) in the
+     * mansion at 120 fps: the game needs about 1.5 cores of work and held 121.7 fps on 2 performance cores; it
+     * gets 3 (the 3rd is headroom for heavy rooms).
+     * Chosen by the kernel's cpu_capacity, not by MHz: small cores can run at 2.0 GHz next to 2.2-2.6 GHz big
+     * ones (Dimensity 1100 in the Retroid Pocket 4 Pro / Flip, Snapdragon G1 Gen 2 in the Retroid Pocket Classic),
+     * so a MHz rule mistook them for medium cores, and an earlier "first 3 below the top" rule put the game on
+     * the AYN Thor's (8 Gen 2) 2.0 GHz small cores: 20 fps. See {@link #pickGameCores}.
+     * 0 (no pinning: the system decides, as before) when the capacities can't be read.
      */
     static long gameCoreMask() {
-        long[] f = coreMaxFreqs();
+        return pickGameCores(coreCapacities());
+    }
+
+    /**
+     * cap = capacity per core (0 = unknown). Classes from the strongest down:
+     *  - medium cores (a class right below the top with >= 75% of its capacity, e.g. 8 Elite 6+2, 8 Gen 2's
+     *    2.8 GHz cores, 865's 2.42 GHz cores): 3 of them, the hot top class stays free;
+     *  - otherwise, when everything below the top class is small (Dimensity 1100: 4 big + 4 small), 3 of the
+     *    top class if it has 3 cores;
+     *  - otherwise 0 (G1 Gen 2: 2 big + 6 small; unknown capacities): the system decides.
+     */
+    static long pickGameCores(long[] cap) {
         long max = 0;
-        for (long v : f) max = Math.max(max, v);
+        for (long v : cap) { if (v <= 0) return 0; max = Math.max(max, v); }
         if (max == 0) return 0;
         java.util.TreeSet<Long> classes = new java.util.TreeSet<>(java.util.Collections.reverseOrder());
-        for (long v : f) if (v > 0) classes.add(v);
+        for (long v : cap) classes.add(v);
         long m = 0;
         int n = 0;
         boolean top = true;
-        for (long cls : classes) {
-            if (top) { top = false; continue; }                 // the hottest class stays free
-            if (cls < max * 75 / 100) break;                    // small cores: never
-            for (int i = 0; i < f.length && i < 63 && n < 3; i++) if (f[i] == cls) { m |= 1L << i; n++; }
-            if (n >= 3) break;
+        for (long cls : classes) {               // medium classes below the top one
+            if (top) { top = false; continue; }
+            if (cls < max * 75 / 100) break;
+            for (int i = 0; i < cap.length && i < 63 && n < 3; i++) if (cap[i] == cls) { m |= 1L << i; n++; }
+            if (n >= 3) return m;
         }
+        m = 0; n = 0;                            // no medium cores: the big class, if it is 3 cores or more
+        for (int i = 0; i < cap.length && i < 63 && n < 3; i++) if (cap[i] == max) { m |= 1L << i; n++; }
         return n >= 3 ? m : 0;
     }
 
