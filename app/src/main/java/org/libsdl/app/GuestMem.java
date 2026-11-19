@@ -14,6 +14,7 @@ final class GuestMem {
     static { try { System.loadLibrary("lmmods"); } catch (Throwable ignored) { } }
 
     static native long nativeRead32(int addr);
+    static native int nativeWrite16(int addr, int value);
 
     private static final int GBH_MODE = 0x804CFFF0;
     private static volatile long checkedAt;

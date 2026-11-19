@@ -100,6 +100,18 @@ JNIEXPORT jlong JNICALL Java_org_libsdl_app_GuestMem_nativeRead32(JNIEnv* env, j
     return (jlong)(((unsigned long)p[0] << 24) | ((unsigned long)p[1] << 16) | ((unsigned long)p[2] << 8) | p[3]);
 }
 
+// Writes a big-endian 16-bit value into the game's memory (Weaker Boos: a Boo's health). 0 = done, -1 = no memory.
+JNIEXPORT jint JNICALL Java_org_libsdl_app_GuestMem_nativeWrite16(JNIEnv* env, jclass cls, jint addr, jint value) {
+    (void)env; (void)cls;
+    if (Java_org_libsdl_app_GuestMem_nativeRead32(env, cls, (jint)((unsigned)addr & ~3u)) < 0) return -1;  // resolves g_mem
+    unsigned char* m = *gmemPtr;
+    unsigned off = (unsigned)addr & 0x01FFFFFEu;
+    if (off + 2 > 0x01800000u) return -1;
+    m[off] = (unsigned char)((unsigned)value >> 8);
+    m[off + 1] = (unsigned char)value;
+    return 0;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Boost CPU (Options > Graphics, high-end phones only): keep the game's busiest threads on the fast
 // cores. A thread of our own app may change its own CPU set; this is the plain Linux call, made

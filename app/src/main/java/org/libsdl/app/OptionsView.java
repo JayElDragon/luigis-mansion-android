@@ -417,7 +417,7 @@ public class OptionsView extends View {
         cheats.add(boolRow("pad", "Poltergust Ride", "Glide with momentum throughout the mansion", "cheat_ride", false));
         cheats.add(boolRow("wide", "Mirror Mansion", "Mirror the world and its controls", "cheat_mirror", false));
         cheats.add(boolRow("run", "Skip Cutscenes", "Press START during a cutscene to skip", "cheat_skip", false));
-        cheats.add(boolRow("spark", "Weaker Boos", "Reduces the Boos' health to 25 · applies next launch", "cheat_fast_boo", false));
+        cheats.add(boolRow("spark", "Weaker Boos", "Reduces the Boos' health to 25", "cheat_fast_boo", false));
         tabs.add(cheats);
 
         List<Row> help = new ArrayList<>();

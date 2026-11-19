@@ -320,7 +320,7 @@ final class Lang {
                 "La pantalla se quedó en $1 Hz, así que el juego va a $2 fps. El ahorro de batería o el ajuste de fluidez de pantalla del teléfono pueden limitarlo.");
 
         // texture pack heat
-        m("Weaker Boos", "Boos más débiles"); m("Reduces the Boos' health to 25 · applies next launch", "Reduce la vida de los Boos a 25 · se aplica al iniciar");
+        m("Weaker Boos", "Boos más débiles"); m("Reduces the Boos' health to 25", "Reduce la vida de los Boos a 25");
         m("Auto Cool-down", "Enfriamiento automático"); m("Lowers the frame rate while the phone is hot", "Baja los cuadros por segundo mientras el teléfono está caliente");
         m("Texture Pack Size", "Tamaño de texturas"); m("Smaller = cooler phone · applied when you press Play", "Más pequeño = teléfono más fresco · se aplica al pulsar Jugar");
         m("1024 (balanced)", "1024 (equilibrado)"); m("512 (coolest)", "512 (más fresco)"); m("2048 (sharp)", "2048 (nítido)"); m("Full (hottest)", "Completo (más calor)");
