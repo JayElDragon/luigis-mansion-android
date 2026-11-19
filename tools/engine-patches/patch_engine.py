@@ -8,6 +8,11 @@ Each patch checks the exact original instructions first and refuses to touch any
    part of every frame wait; at 120 fps that kept a core spinning.
 2. Game timer (recomp::sched timer thread): it slept until 3 ms before each timed interrupt and then busy-yielded
    those 3 ms. The spin window becomes 0.5 ms (both the threshold and the sleep deadline constant).
+3. libmain_pd.so only: aurora::gx vtx_attr() aborted with "unmapped vtx attr 13" when a draw's texgen reads
+   texture coordinates its vertex format does not have (Premium Deluxe's Boo container in E. Gadd's lab, once
+   Boos are captured). Its abort exit now returns "vec2f(0.0, 0.0)" (copied from a string already in the
+   binary) and leaves through the function's own epilogue, like the existing defaults for a missing normal or
+   colour.
 """
 import os, shutil, struct, subprocess, sys
 
@@ -63,6 +68,22 @@ def patch_timer(buf):
     return f"timer: patched at {a:#x}/{k:#x}/{d:#x}"
 
 
+def patch_tex(buf):
+    SITE, DELTA, STR, EPILOGUE = 0x2873CFC, 0x4000, 0x637137, 0x2873CE8
+    def adrp_(pc, target, rd):
+        imm = (((target & ~0xFFF) - (pc & ~0xFFF)) >> 12) & ((1 << 21) - 1)
+        return 0x90000000 | ((imm & 3) << 29) | ((imm >> 2) << 5) | rd
+    new = [adrp_(SITE, STR, 9), 0x91000000 | ((STR & 0xFFF) << 10) | (9 << 5) | 9, 0x3DC00120, 0x528003C8,
+           0x39000008, 0x3C801000, 0x3900401F, 0x14000000 | (((EPILOGUE - (SITE + 28)) >> 2) & 0x3FFFFFF)]
+    off = SITE - DELTA
+    cur = list(struct.unpack_from("<8I", buf, off))
+    if cur == new: return "texcoords: already patched"
+    if cur[0] != 0xB90003E2 or bytes(buf[STR:STR + 16]) != b"vec2f(0.0, 0.0),":
+        raise SystemExit("texcoords: unexpected bytes, not patching")
+    struct.pack_into("<8I", buf, off, *new)
+    return f"texcoords: patched at {off:#x}"
+
+
 def main():
     folder = sys.argv[1] if len(sys.argv) > 1 else "."
     for name in ("libmain.so", "libmain_pd.so"):
@@ -70,6 +91,7 @@ def main():
         if not os.path.isfile(path): print(name, "not found, skipped"); continue
         buf = bytearray(open(path, "rb").read())
         msgs = [patch_delay(path, buf), patch_timer(buf)]
+        if name == "libmain_pd.so": msgs.append(patch_tex(buf))
         if not os.path.exists(path + ".orig"): shutil.copy2(path, path + ".orig")
         open(path, "wb").write(buf)
         print(name, "|", "; ".join(msgs))
