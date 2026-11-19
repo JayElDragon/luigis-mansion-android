@@ -65,6 +65,14 @@ public class MyGame extends SDLActivity {
         // until Android closed the game (ANR). Answer it with "start normally"; the launcher already offers
         // Safe Mode and a log after a crash.
         try { android.system.Os.setenv("LM_RECOVERY", "0", true); } catch (Throwable ignored) { }
+        // Options > Cheats > Weaker Boos: the engine caps the health of every actor of one type (LM_BOSS_SETHP,
+        // checked each game frame); "telesa" is the room Boos' type in the game's own type table (King Boo and
+        // the big Boo bosses are other types and keep theirs). Read once when the engine starts.
+        try {
+            if (getSharedPreferences("lm", MODE_PRIVATE).getBoolean("cheat_fast_boo", false))
+                android.system.Os.setenv("LM_BOSS_SETHP", "telesa:25", true);
+            else android.system.Os.unsetenv("LM_BOSS_SETHP");
+        } catch (Throwable ignored) { }
         Lang.load(this);
         // Hidden test switch: files/gpu_profile.txt (made by gpu_test.bat over USB) turns on the engine's own
         // GPU timer: every 5 s the log gets the GPU time of each drawing step (tag LMRecomp, "GPU profile").

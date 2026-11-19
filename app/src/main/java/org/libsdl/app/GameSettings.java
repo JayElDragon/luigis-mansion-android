@@ -311,11 +311,9 @@ final class GameSettings {
             put(ini, "enhancements", "show_fps", p.getBoolean("g_showfps", false) ? "true" : "false");
             put(ini, "gameplay", "damage_scale", p.getBoolean("cheat_no_damage", false) ? "0.0" : "1.0");
             put(ini, "gameplay", "health_scale", p.getBoolean("cheat_health", false) ? "5.0" : "1.0");
-            // Fast Boo Capture: the engine has no Boo-only switch, but its Poltergust strength drains every captured
-            // ghost (Boos included) and ghost health covers them too, so it uses both at their strongest.
-            boolean fastBoo = p.getBoolean("cheat_fast_boo", false);
-            put(ini, "gameplay", "ghost_health_scale", (fastBoo || p.getBoolean("cheat_weak_ghosts", false)) ? "0.25" : "1.0");
-            put(ini, "gameplay", "vacuum_strength", (fastBoo || p.getBoolean("cheat_vacuum", false)) ? "4.0" : "1.0");
+            put(ini, "gameplay", "ghost_health_scale", p.getBoolean("cheat_weak_ghosts", false) ? "0.25" : "1.0");
+            put(ini, "gameplay", "vacuum_strength", p.getBoolean("cheat_vacuum", false) ? "4.0" : "1.0");
+            // (Weaker Boos is not a settings.ini key: MyGame passes it to the engine as LM_BOSS_SETHP.)
             put(ini, "gameplay", "always_ride", p.getBoolean("cheat_ride", false) ? "true" : "false");
             put(ini, "gameplay", "mirror_world", p.getBoolean("cheat_mirror", false) ? "true" : "false");
             put(ini, "enhancements", "skip_cutscenes", p.getBoolean("cheat_skip", false) ? "true" : "false");

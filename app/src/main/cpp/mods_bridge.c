@@ -77,6 +77,30 @@ JNIEXPORT jint JNICALL Java_org_libsdl_app_TexturePacks_nativeApply(JNIEnv* env,
 
 
 // ---------------------------------------------------------------------------------------------
+// GuestMem.java: reads a 32-bit word of the game's memory (read only). The engine exports
+// recomp::g_mem, its host window over the console's RAM; guest 0x80xxxxxx = g_mem + (addr & 0x01FFFFFF).
+// Used for the Game Boy Horror search view flag, so its look controls can be turned the right way up.
+// ---------------------------------------------------------------------------------------------
+static unsigned char** gmemPtr;
+
+// returns the big-endian word, or -1 when the game's memory is not there (yet)
+JNIEXPORT jlong JNICALL Java_org_libsdl_app_GuestMem_nativeRead32(JNIEnv* env, jclass cls, jint addr) {
+    (void)env; (void)cls;
+    if (!gmemPtr) {
+        if (!lib) lib = engine();
+        if (!lib) return -1;
+        gmemPtr = (unsigned char**)dlsym(lib, "_ZN6recomp5g_memE");
+        if (!gmemPtr) return -1;
+    }
+    unsigned char* m = *gmemPtr;
+    if (!m) return -1;
+    unsigned off = (unsigned)addr & 0x01FFFFFCu;
+    if (off + 4 > 0x01800000u) return -1;
+    const unsigned char* p = m + off;
+    return (jlong)(((unsigned long)p[0] << 24) | ((unsigned long)p[1] << 16) | ((unsigned long)p[2] << 8) | p[3]);
+}
+
+// ---------------------------------------------------------------------------------------------
 // Boost CPU (Options > Graphics, high-end phones only): keep the game's busiest threads on the fast
 // cores. A thread of our own app may change its own CPU set; this is the plain Linux call, made
 // directly so no extra library is needed. mask = bit per CPU core; 0 = all cores again.

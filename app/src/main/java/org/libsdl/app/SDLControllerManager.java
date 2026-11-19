@@ -378,6 +378,7 @@ class SDLJoystickHandler {
                     float value = (event.getAxisValue(range.getAxis(), actionPointerIndex) - range.getMin()) / range.getRange() * 2.0f - 1.0f;
                     if (range.getAxis() == joystick.camX || range.getAxis() == joystick.camY) value = StickCurve.apply(value);
                     if (range.getAxis() == joystick.camY) value = DlcInput.rightStickY(value);
+                    else if (range.getAxis() == MotionEvent.AXIS_Y) value = GuestMem.leftStickY(value);  // Game Boy Horror view
                     SDLControllerManager.onNativeJoy(joystick.device_id, i, value);
                 }
                 for (int i = 0; i < joystick.hats.size() / 2; i++) {

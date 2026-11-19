@@ -744,6 +744,6 @@ public class TouchOverlay extends View implements InputManager.InputDeviceListen
             if (c.trigger == 1) rt = 1;
         }
         sentDetach = false;
-        if (!preview) MyGame.nativeBridgeInput(buttons, ls.dx, ls.dy, cs.dx, DlcInput.rightStickY(cs.dy), lt, rt);
+        if (!preview) MyGame.nativeBridgeInput(buttons, ls.dx, GuestMem.leftStickY(ls.dy), cs.dx, DlcInput.rightStickY(cs.dy), lt, rt);
     }
 }
